@@ -1,0 +1,254 @@
+<?php
+// $Id: countdown.module,v 1.7 2009/11/19 02:11:01 deekayen Exp $
+
+/**
+ * @file
+ * Count to, or from, a specified date and display the output in a block
+ */
+
+//module_load_include('inc', 'fd_report', 'fd_report');
+
+
+
+/**
+ * Implement hook_help().
+ *
+ * @param string $section
+ * @return string
+ */
+function fd_report_help($path, $arg) {
+  $output = '';
+  switch ($path) {
+    case 'admin/help#fd_report':
+      $output = t("fd_report");
+      break;
+  }
+  return $output;
+}
+
+
+/**
+ * Implements hook_permission().
+ */
+function fd_report_permission() {
+    $permissions = array(
+        'view my download files' => array(
+            'title' => 'View my download files',
+            'description' => '',
+        ),
+        'set downloadable per user' => array(
+            'title' => 'Set downloadable per user',
+            'description' => '',
+        ),
+    );
+    return $permissions;
+}
+
+function fd_report_menu() {
+
+    $items['admin/people/permissions/download'] = array(
+        'title' => 'Downloadable list',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('list_downloadable_per_user'),
+        'access arguments' => array('set downloadable per user'),
+        'file' => 'inc/fd-report-admin.inc',
+        'type' => MENU_LOCAL_TASK,
+        'weight' => 3,
+    );
+    $items['admin/people/permissions/download/set'] = array(
+        'title' => 'Setting downloadable',
+        'description' => 'Setting downloadable per user',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('set_downloadable_per_user'),
+        'access arguments' => array('set downloadable per user'),
+        'file' => 'inc/fd-report-admin.inc',
+    );
+
+    $items['user/%user/download/detail'] = array(
+        'title' => 'Track file downloads',
+        'page callback' => 'user_files_download_report_detail',
+        'page arguments' => array(1),
+        'access callback' => 'user_access',
+        'access arguments' => array('view my download files'),
+        'type' => MENU_LOCAL_TASK,
+        'weight' => 1,
+        'file' => 'inc/user-files-download-report.inc',
+    );
+
+    $items['user/%user/download/your-package'] = array(
+        'title' => 'Your Package',
+        'page callback' => 'user_files_download_your_package',
+        'page arguments' => array(1),
+        'access callback' => 'user_access',
+        'access arguments' => array('view my download files'),
+        'type' => MENU_LOCAL_TASK,
+        'weight' => -1,
+        'file' => 'inc/user-files-download-report.inc',
+    );
+
+    $items['user/%user/download'] = array(
+        'title' => 'Download dashboard',
+        'page callback' => 'user_files_download_report',
+        'page arguments' => array(1, TRUE),
+        'access callback' => 'user_access',
+        'access arguments' => array('view my download files'),
+        'type' => MENU_LOCAL_TASK,
+        'file' => 'inc/user-files-download-report.inc',
+        'weight'=> 3
+    );
+
+    $items['user/%user/download/report'] = array(
+        'title' => 'Your download dashboard',
+        'type' => MENU_DEFAULT_LOCAL_TASK,
+        'weight' => 0,
+
+    );
+
+    $items['user/%user/cannot-download'] = array(
+        'title' => 'Access denied',
+        'page callback' => 'message_user_cannot_download',
+        'access arguments' => array('access content'),
+        'file' => 'inc/user-files-download-report.inc',
+    );
+
+    return $items;
+  }
+
+
+
+function download_count_per_user($obj_user){
+
+    $str_sql = "SELECT tdfp.fid, COUNT(*) AS counter
+                FROM track_da_files tdf
+                    INNER JOIN track_da_files_paths tdfp ON tdf.pid=tdfp.pid
+                WHERE tdf.uid = :uid
+                GROUP BY tdfp.fid ";
+    $query = db_query($str_sql, array(':uid'=>$obj_user->uid));
+    $rows = array();
+    foreach ($query as $record) {
+        $rows [] = $record;
+    }
+
+    return array(
+        'count' => count($rows),
+        'data' => $rows
+    );
+
+}
+
+function fd_report_file_url_alter(&$uri){
+    if(preg_match('/private:/i', $uri)){
+        global $user;
+        if(!user_access('bypass private files download permission')){
+            if(user_is_logged_in()){
+                //not yet register downloadable package
+                $uri = 'user/'.$user->uid.'/cannot-download';
+            }else{
+                $uri = 'user/login';
+            }
+        }else if(!in_array($user->uid, array(0, 1))) {
+
+            //get all download of the user
+            $downloaded = download_count_per_user($user);
+            //get setting of the user
+            $context = get_setting_downloadable_data_per_user($user->uid);
+
+            $remaining = $context['download_limit'] - $downloaded['count'];
+
+            if($context['status']==1 && $remaining>0){
+                //print(t('Total files which user can download remaining is @rem file(s)', array('@rem'=>$remaining)));
+            }else{
+
+                //-- get file info by uri
+                $files = entity_load('file', FALSE, array('uri' => $uri));
+                $file_keys = array_keys($files);
+                $fid = $file_keys[0];
+                //-- get all file which user has downloaded
+                $has_download = array();
+                foreach($downloaded['data'] as $i => $value){
+                    $has_download[] = $value->fid;
+                }
+                //if file not exists in $has_download then deny access download file
+                if(!in_array($fid, $has_download)){
+                    //expired download
+                    $uri = 'user/'.$user->uid.'/cannot-download';
+                }
+            }
+        }
+    }
+
+}
+
+function get_setting_downloadable_data_per_user($uid){
+    $result = db_select('user_downloadable', 'ud')
+        ->fields('ud')
+        ->condition('uid', $uid,'=')
+        ->execute()
+        ->fetchAssoc();
+
+    return $result;
+}
+
+
+function fd_report_file_download_access($file_item, $entity_type, $entity) {
+
+    if(preg_match('/private:/i', $file_item['uri'])){
+        global $user;
+        if(user_access('bypass private files download permission') && !in_array($user->uid, array(0, 1))){
+            //get all download of the user
+            $downloaded = download_count_per_user($user);
+            //get setting of the user
+            $context = get_setting_downloadable_data_per_user($user->uid);
+            $remaining = $context['download_limit'] - $downloaded['count'];
+            if($context['status']==1 && $remaining>0){
+                //print(t('Total files which user can download remaining is @rem file(s)', array('@rem'=>$remaining)));
+            }else{
+                $fid = $file_item['fid'];
+                //-- get all file which user has downloaded
+                $has_download = array();
+                foreach($downloaded['data'] as $i => $value){
+                    $has_download[] = $value->fid;
+                }
+                //if file not exists in $has_download then deny access download file
+                if(!in_array($fid, $has_download)){
+                    drupal_goto('user/'.$user->uid.'/cannot-download');
+                    return false;
+                }
+            }
+        }
+    }
+
+
+}
+
+
+
+function fd_report_file_download_access_alter(&$grants, $file_item, $entity_type, $entity) {
+
+    if(preg_match('/private:/i', $file_item['uri'])){
+        global $user;
+        if(user_access('bypass private files download permission') && !in_array($user->uid, array(0, 1))){
+            //get all download of the user
+            $downloaded = download_count_per_user($user);
+            //get setting of the user
+            $context = get_setting_downloadable_data_per_user($user->uid);
+            $remaining = $context['download_limit'] - $downloaded['count'];
+            if($context['status']==1 && $remaining>0){
+                //print(t('Total files which user can download remaining is @rem file(s)', array('@rem'=>$remaining)));
+            }else{
+                $fid = $file_item['fid'];
+                //-- get all file which user has downloaded
+                $has_download = array();
+                foreach($downloaded['data'] as $i => $value){
+                    $has_download[] = $value->fid;
+                }
+                //if file not exists in $has_download then deny access download file
+                if(!in_array($fid, $has_download)){
+                    return false;
+                }
+            }
+        }
+    }
+
+
+}

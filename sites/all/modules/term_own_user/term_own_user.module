@@ -1,0 +1,116 @@
+<?php
+// $Id: term_own_user.module,v 1.7 2009/11/19 02:11:01 tqnghiep Exp $
+
+/**
+ * @file
+ * Count to, or from, a specified date and display the output in a block
+ */
+
+
+/**
+ * Implement hook_help().
+ *
+ * @param string $section
+ * @return string
+ */
+function term_own_user_help($path, $arg) {
+  $output = '';
+  switch ($path) {
+    case 'admin/help#fd_report':
+      $output = t("fd_report");
+      break;
+  }
+  return $output;
+}
+
+
+/**
+ * Implements hook_permission().
+ */
+function term_own_user_permission() {
+    $permissions = array(
+    );
+    return $permissions;
+}
+
+function term_own_user_menu() {
+    $items = array();
+    return $items;
+}
+
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function term_own_user_form_alter(&$form, $form_state, $form_id) {
+    // Check for a particular content type's node form.
+    switch($form_id){
+        case 'taxonomy_form_term':
+            $form['#after_build'][] = 'taxonomy_form_term_after_build';
+            break;
+        case 'user_register_form':
+            $form['#after_build'][] = 'user_register_form_after_build';
+            break;
+        case 'user_profile_form':
+            $form['#after_build'][] = 'user_profile_form_after_build';
+            break;
+        default:
+            break;
+    }
+}
+
+/**
+ * Modify CCK form elements on the example node form.
+ */
+function taxonomy_form_term_after_build($form, &$form_state) {
+    // TODO: Stuff!
+
+    // Remove other users' terms so only the current user's terms are
+    // displayed. This should be deprecated.
+    global $user;
+    if(!in_array('administrator', $user->roles)){
+        $account = user_load($user->uid);
+        $term_per_user = array();
+        foreach($account as $key => $value){
+            if(preg_match('/field_/', $key)){
+                foreach($value['und'] as $k => $v){
+                    $term_per_user[] = intval($v['tid']);
+                }
+            }
+        }
+        $parent = $form['relations']['parent']['#options'];
+        //$new_parents = array();
+        foreach ($parent as $tid => $value) {
+            if (is_numeric($tid)) {
+                if ((private_taxonomy_is_term_private($tid))) {
+                    if(!in_array($tid, $term_per_user) && private_taxonomy_term_get_user($tid) != $user->uid){
+                        unset($form['relations']['parent']['#options'][$tid]);
+                    }
+                }else{
+                    unset($form['relations']['parent']['#options'][$tid]);
+                }
+            }
+        }
+        //$form['relations']['parent']['#options'] = $new_parents;
+    }
+
+
+    return $form;
+}
+
+/**
+ * Modify CCK form elements on the example node form.
+ */
+function user_register_form_after_build($form, &$form_state) {
+    // TODO: Stuff!
+    return $form;
+}
+
+
+/**
+ * Modify CCK form elements on the example node form.
+ */
+function user_profile_form_after_build($form, &$form_state) {
+    // TODO: Stuff!
+    return $form;
+}

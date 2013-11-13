@@ -1,0 +1,15 @@
+; $Id: term_own_user.info,v 1.3 2013/10/18 02:11:01 tqn@uniweb.vn Exp $
+name = Term own user
+description = Term own user permission
+core = 7.x
+dependencies[] = taxonomy
+dependencies[] = private_taxonomy
+files[] = term_own_user.module
+files[] = term_own_user.inc
+
+; Information added by drupal.org packaging script on 2009-11-19
+version = "7.x-1.0-alpha1"
+core = "7.x"
+project = "term_own_user"
+datestamp = "1258596912"
+
