@@ -68,18 +68,20 @@ function taxonomy_form_term_after_build($form, &$form_state) {
     // Remove other users' terms so only the current user's terms are
     // displayed. This should be deprecated.
     global $user;
-    if(!in_array('administrator', $user->roles)){
+    if(!user_access('administer taxonomy', $user)){
         $account = user_load($user->uid);
         $term_per_user = array();
         foreach($account as $key => $value){
-            if(preg_match('/field_/', $key)){
+            if(preg_match('/field_/', $key) && count($value)>0){
                 foreach($value['und'] as $k => $v){
                     $term_per_user[] = intval($v['tid']);
                 }
             }
+			if(preg_match('/field_/', $key) && count($value)==0){
+				drupal_set_message(t('You must select your categories, please click <a href="@link">here</a> to do that before create sub categories.', array('@link'=>url('user/'.$user->uid.'/edit'))), 'error');
+			}
         }
-        $parent = $form['relations']['parent']['#options'];
-        //$new_parents = array();
+        $parent = $form['relations']['parent']['#options'];        
         foreach ($parent as $tid => $value) {
             if (is_numeric($tid)) {
                 if ((private_taxonomy_is_term_private($tid))) {
@@ -91,9 +93,30 @@ function taxonomy_form_term_after_build($form, &$form_state) {
                 }
             }
         }
-        //$form['relations']['parent']['#options'] = $new_parents;
-    }
-
+		
+		$form['relations']['#collapsible'] = false;
+		$form['relations']['#collapsed'] = false;	
+		
+		//Set parent field is required
+		$form['relations']['parent']['#required'] = true;
+		//Set default_value for parent field		
+		$tids = array_keys($form['relations']['parent']['#options']);
+		if(count($tids)>0){
+			$form['relations']['parent']['#default_value'] = $tids[0];
+			$form['relations']['parent']['#value'] = $tids[0];
+		}		
+    }else{
+		$parent = $form['relations']['parent']['#options'];
+        foreach ($parent as $tid => $value) {
+			$user_id_of_term = private_taxonomy_term_get_user($tid);
+			if(is_numeric($user_id_of_term)){
+				$account = user_load($user_id_of_term);
+				if(!user_access('administer taxonomy', $account)){
+					unset($form['relations']['parent']['#options'][$tid]);
+				}
+			}
+        }
+	}	
 
     return $form;
 }
@@ -102,7 +125,19 @@ function taxonomy_form_term_after_build($form, &$form_state) {
  * Modify CCK form elements on the example node form.
  */
 function user_register_form_after_build($form, &$form_state) {
-    // TODO: Stuff!
+	
+	foreach($form as $key => $value){
+		if(preg_match('/field_/', $key)){
+			$parents = taxonomy_parents_top_level_items(2);			
+			$options = $form[$key]['und']['#options'];
+			foreach($options as $tid =>$option){
+				if(!in_array($tid, array_keys($parents))){
+					unset($form[$key]['und']['#options'][$tid]);
+					unset($form[$key]['und'][$tid]);
+				}
+			}
+		}
+	}
     return $form;
 }
 
@@ -111,6 +146,28 @@ function user_register_form_after_build($form, &$form_state) {
  * Modify CCK form elements on the example node form.
  */
 function user_profile_form_after_build($form, &$form_state) {
-    // TODO: Stuff!
+	
+	foreach($form as $key => $value){
+		if(preg_match('/field_/', $key)){
+			$form[$key]['#weight']=-20;
+			$parents = taxonomy_parents_top_level_items(2);			
+			$options = $form[$key]['und']['#options'];
+			foreach($options as $tid =>$option){
+				if(!in_array($tid, array_keys($parents))){
+					unset($form[$key]['und']['#options'][$tid]);
+					unset($form[$key]['und'][$tid]);
+				}
+			}
+		}
+	}
     return $form;
+}
+
+function taxonomy_parents_top_level_items($vocabulary_id){
+	$pterms = taxonomy_get_tree($vocabulary_id, 0, 1);
+	$return = array();
+	foreach($pterms as $tid => $tem){
+		$return[$tem->tid] = $tem->name;
+	}
+	return $return;
 }
