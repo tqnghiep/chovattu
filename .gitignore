@@ -1,7 +1,12 @@
+cgi
+.idea
 # Ignore configuration files that may contain sensitive information.
 sites/*/settings*.php
 
 # Ignore paths that contain user-generated content.
 sites/*/files
 sites/*/private
-cgi
+sites/all/modules/*.zip
+sites/all/themes/*.zip
+sites/all/modules/*.rar
+sites/all/themes/*.rar
